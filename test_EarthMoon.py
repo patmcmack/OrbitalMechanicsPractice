@@ -11,7 +11,8 @@ cb = pData.Earth
 
 STEPS = 10000 # total steps of ephemeris data
 FRAME = 'ECLIPJ2000'
-OBSERVER='SUN'
+OBSERVER='Earth'
+DAYS = 22
 
 # Load metadata for solar system ephemeris
 spice.furnsh('SpiceData/solar_system_kernel.mk')
@@ -20,15 +21,19 @@ spice.furnsh('SpiceData/solar_system_kernel.mk')
 ids,names,tcs_sec,tcs_cal=st.get_objects('SpiceData/de432s.bsp', display=False)
 
 # get only barycenters
-names = [f for f in names if 'BARYCENTER' in f]
-
-# add missed objects TODO figure out why only get one return
-missed = ['VENUS BARYCENTER', 'EARTH BARYCENTER', 'MARS BARYCENTER', 'JUPITER BARYCENTER', 'SATURN BARYCENTER', 'URANUS BARYCENTER', 'NEPTUNE BARYCENTER', 'PLUTO BARYCENTER', 'MOON']
-
-names += missed
+names = ['MOON']
 
 # time array for ephemeris data
-times = st.tc2array(tcs_sec[0], STEPS)
+# times = st.tc2array(tcs_sec[0], STEPS)
+times =np.zeros((STEPS,1))
+t0 = tcs_sec[0][0] + (60*60*24*365*73.12)
+t1 = tcs_sec[0][0]+(DAYS*24*60*60) + (60*60*24*365*73.12)
+times[:,0] = np.linspace(t0, t1, STEPS)
+
+# Human readable time format
+tc_cal = [spice.timout(f, "YYYY MON DD HR:MN:SC") for f in [t0, t1]]
+
+figTitle = f"From {tc_cal[0]} to {tc_cal[1]}"
 
 # ephemeris data
 rs=[]
@@ -37,4 +42,4 @@ for name in names:
     # add ephemeris data for each body to list
     rs.append(st.get_ephemeris_data(name,times,FRAME,OBSERVER))
 
-tools.plot_NOrbit(bodies = rs, titles = names, cb = pData.Sun)
+tools.plot_NOrbit(bodies = rs, titles = names, cb = pData.Earth, figTitle = figTitle)

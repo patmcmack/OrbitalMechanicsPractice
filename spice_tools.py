@@ -2,7 +2,7 @@ import spiceypy as spice
 import numpy as np
 
 def get_objects(fileName, display=False):
-    objects = spice.spkobj(fileName, id=2)
+    objects = spice.spkobj(fileName)
     ids, names, tcs_sec, tcs_cal = [],[],[],[]
     n = 0
     if display:

@@ -6,7 +6,7 @@ import datetime
 import planetData as pData
 import spiceypy as spice #https://spiceypy.readthedocs.io/en/v2.3.1/documentation.html
 
-def plot_NOrbit(cb, bodies, titles):
+def plot_NOrbit(cb, bodies, titles, figTitle = ''):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection = '3d')
 
@@ -32,6 +32,8 @@ def plot_NOrbit(cb, bodies, titles):
         ax.set_xlabel(['X (km)'])
         ax.set_ylabel(['Y (km)'])
         ax.set_zlabel(['Z (km)'])
+        if len(figTitle)>0:
+            ax.set_title(figTitle)
 
         ax.set_aspect('equal')
         ax.legend()
