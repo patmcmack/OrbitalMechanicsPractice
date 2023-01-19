@@ -12,33 +12,38 @@ def null_perts(): # Null Perturbations
         'J4': False,
         'J5': False,
         'J6': False,
-        'aero': False
+        'aero': False,
+        'thrust': 0,
+        'thrust_direction': 0,
+        'isp': 0
     }
 
 class OrbitPropagaotr:
     def __init__(self, state0, tspan, dt, coes = False, mass0 = 99999, deg=True, cb = pData.Earth, perts = null_perts(), Cd = 0, A = 0):
         if coes:
-            self.r0,self.v0, date = tools.coes2rv(state0, deg = deg, mu = cb['mu'])
+            self.r0,self.v0 = tools.coes2rv(state0, deg = deg, mu = cb['mu'])
         else:
             self.r0 = state0[:3]
             self.v0 = state0[3:]
 
-        self.y0 = self.r0.tolist() + self.v0.tolist()
+        
         self.tspan = tspan
         self.dt = dt 
         self.cb = cb
-
-        self.nsteps = int(np.ceil(self.tspan/self.dt))
-
-        self.ts = np.zeros((self.nsteps,1))
-        self.ys = np.zeros((self.nsteps,6))
-        self.ts[0] = 0
-        self.ys[0,:] = self.y0 
         self.step = 1
         self.perts = perts
         self.Cd = Cd # coef of drag
         self.A = A # cross-sectional area
-        self.mass = mass0
+        self.mass0 = mass0
+
+        self.nsteps = int(np.ceil(self.tspan/self.dt))
+
+        # Initial state
+        self.y0 = self.r0.tolist() + self.v0.tolist()+[self.mass0]
+        self.ts = np.zeros((self.nsteps,1))
+        self.ys = np.zeros((self.nsteps,7))
+        self.ts[0] = 0
+        self.ys[0,:] = self.y0 
 
         # solver 
         self.solver = ode(self.diffy_q)
@@ -68,7 +73,7 @@ class OrbitPropagaotr:
         self.vs = self.ys[:,3:]
 
     def diffy_q(self, t, y):
-        rx,ry,rz,vx,vy,vz = y
+        rx,ry,rz,vx,vy,vz,mass = y
         r = np.array([rx,ry,rz])
         v = np.array([vx,vy,vz])
 
@@ -141,32 +146,38 @@ class OrbitPropagaotr:
             # velocity relative to rotating atmosphere
             v_rel = v-np.cross(self.cb['atm_rot_vector'],r)
 
-            a_drag = -0.5 * rho * v_rel * np.linalg.norm(v_rel)*self.Cd*self.A/self.mass
+            a_drag = -0.5 * rho * v_rel * np.linalg.norm(v_rel)*self.Cd*self.A/mass
 
             a+=a_drag
 
+        # Thrust perturbation
+        if self.perts['thrust']:
+            # thrust vector
+            a+=self.perts['thrust_direction']*(np.array(v)/np.linalg.norm(v))*self.perts['thrust']/mass/1000 # km/s^2
 
+            # Derivative of total mass
+            dmdt =- self.perts['thrust']/self.perts['isp']/9.81
 
-        return[vx,vy,vz,a[0],a[1],a[2]]
+        return[vx,vy,vz,a[0],a[1],a[2], dmdt]
 
     def plotOrbit(self, title='Title'):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection = '3d')
 
-        u,v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
+        u,v = np.mgrid[0:2*np.pi:20j, 0:np.pi:30j]
         x = self.cb['radius']*np.cos(u)*np.sin(v)
         y = self.cb['radius']*np.sin(u)*np.sin(v)
         z = self.cb['radius']*np.cos(v)
-        ax.plot_surface(x,y,z,cmap = 'Blues', zorder = 0.3)
+        ax.plot_surface(x,y,z,cmap = 'Blues', zorder = 0.3, alpha = 0.1, edgecolors=[.5,.5,.5], linewidth=0.1)
 
         ax.plot(self.rs[:,0], self.rs[:,1], self.rs[:,2], 'k', label='Tragectory', zorder = 0.5)
         ax.plot(self.rs[0,0], self.rs[0,1], self.rs[0,2], 'ko', label='Initial Pos')
 
         maxVal = np.max(np.abs(self.rs))
 
-        ax.set_xlim([-maxVal, maxVal])
-        ax.set_ylim([-maxVal, maxVal])
-        ax.set_zlim([-maxVal, maxVal])
+        # ax.set_xlim([-maxVal, maxVal])
+        # ax.set_ylim([-maxVal, maxVal])
+        # ax.set_zlim([-maxVal, maxVal])
 
         ax.set_xlabel(['X (km)'])
         ax.set_ylabel(['Y (km)'])
