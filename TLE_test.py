@@ -9,7 +9,7 @@ import orbitTools as t
 cb = pData.Earth
 
 tspan = 3600*24
-dt = 10
+dt = 100
 
 perts = null_perts()
 perts['J2'] = True

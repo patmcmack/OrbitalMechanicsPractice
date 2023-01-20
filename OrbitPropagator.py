@@ -200,7 +200,7 @@ class OrbitPropagaotr:
             # satellite to body
             r_sat2body = r_cb2nb-r
 
-            a += body['mu']*(r_sat2body/(r_sat2body/np.linalg.norm(r_sat2body))**3 - r_cb2nb/((r_cb2nb/np.linalg.norm(r_cb2nb)))**3)
+            a +=  body['mu'] * (r_sat2body/np.linalg.norm(r_sat2body)**3 - r_cb2nb/(np.linalg.norm(r_cb2nb))**3)
 
         return[vx,vy,vz,a[0],a[1],a[2], dmdt]
 

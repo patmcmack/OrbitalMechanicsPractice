@@ -7,7 +7,7 @@ import spice_tools as st
 from OrbitPropagator import OrbitPropagaotr as OP
 from OrbitPropagator import null_perts
 
-tspan = 3600*24*100
+tspan = 3600*24*50
 dt = 50
 
 cb = pData.Earth
