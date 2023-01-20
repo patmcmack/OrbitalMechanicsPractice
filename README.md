@@ -6,3 +6,4 @@ Refresh of some orbital Mechanics stuff. Not maintained or organized for anyone'
 - Orbital Mechanics for Engineering Students, 4th Ed. H. Curtis
 - Fundamentals of Astrodynamics, 2nd Ed. R. Bate, D. Mueller, J. White, W. Saylor
 - Analytical Mechanics of Space Systems, 2nd Ed. Schaub, H., Junkins, J.L.
+- Third-Body Perturbation Effects on Satellite Formations, C. Roscoe, 2015

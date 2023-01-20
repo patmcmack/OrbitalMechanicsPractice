@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 from scipy.integrate import ode
 import numpy as np
 import orbitTools as tools
+import spiceypy as spice
+import spice_tools as st
 
 import planetData as pData
 
@@ -15,11 +17,12 @@ def null_perts(): # Null Perturbations
         'aero': False,
         'thrust': 0,
         'thrust_direction': 0,
-        'isp': 0
+        'isp': 0,
+        'nBody': []
     }
 
 class OrbitPropagaotr:
-    def __init__(self, state0, tspan, dt, coes = False, mass0 = 99999, deg=True, cb = pData.Earth, perts = null_perts(), Cd = 0, A = 0):
+    def __init__(self, state0, tspan, dt, coes = False, mass0 = 99999, deg=True, cb = pData.Earth, perts = null_perts(), Cd = 0, A = 0, date0 = '2022-01-01', frame='J2000'):
         if coes:
             self.r0,self.v0 = tools.coes2rv(state0, deg = deg, mu = cb['mu'])
         else:
@@ -35,6 +38,8 @@ class OrbitPropagaotr:
         self.Cd = Cd # coef of drag
         self.A = A # cross-sectional area
         self.mass0 = mass0
+        self.date0 = date0
+        self.frame = frame
 
         self.nsteps = int(np.ceil(self.tspan/self.dt))
 
@@ -44,6 +49,32 @@ class OrbitPropagaotr:
         self.ys = np.zeros((self.nsteps,7))
         self.ts[0] = 0
         self.ys[0,:] = self.y0 
+        self.spice_files_loaded = []
+
+        # Check if loading in spice data
+        if self.perts['nBody']:
+            # load kernel and log
+            spice.furnsh('SpiceData/solar_system_kernel.mk')
+            self.spice_files_loaded.append('SpiceData/solar_system_kernel.mk')
+
+            # convert start date to seconds after J2000
+            self.start_time = spice.utc2et(self.date0)
+
+            self.spice_tspan = np.linspace(self.start_time, self.start_time+self.tspan, self.nsteps)
+
+        # Load kernels for each body
+        for body in self.perts['nBody']:
+
+            if body['spice_file'] not in self.spice_files_loaded:
+                spice.furnsh(body['spice_file'])
+                self.spice_files_loaded.append(body['spice_file'])
+
+            # Calculate body states with respect to central body
+            body['states'] = st.get_ephemeris_data(body['name'],self.spice_tspan,self.frame, self.cb['name'])
+
+            
+
+
 
         # solver 
         self.solver = ode(self.diffy_q)
@@ -76,6 +107,7 @@ class OrbitPropagaotr:
         rx,ry,rz,vx,vy,vz,mass = y
         r = np.array([rx,ry,rz])
         v = np.array([vx,vy,vz])
+        dmdt = 0
 
         norm_r = np.linalg.norm(r)
 
@@ -157,6 +189,18 @@ class OrbitPropagaotr:
 
             # Derivative of total mass
             dmdt =- self.perts['thrust']/self.perts['isp']/9.81
+
+        # N-body perturbation
+        for body in self.perts['nBody']:
+            # Third-Body Perturbation Effects on Satellite Formations, C. Roscoe, 2015
+
+            # central body to n-body
+            r_cb2nb = body['states'][self.step,:3]
+
+            # satellite to body
+            r_sat2body = r_cb2nb-r
+
+            a += body['mu']*(r_sat2body/(r_sat2body/np.linalg.norm(r_sat2body))**3 - r_cb2nb/((r_cb2nb/np.linalg.norm(r_cb2nb)))**3)
 
         return[vx,vy,vz,a[0],a[1],a[2], dmdt]
 

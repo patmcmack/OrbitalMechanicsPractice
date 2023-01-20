@@ -45,8 +45,8 @@ def plot_NOrbit(cb, bodies, titles, figTitle = ''):
 def coes2rv(coes, deg=False, mu = pData.Earth['mu']):
     # Convert Classical orbital elements to state (r & v)
     
-    # a,e,i,ta,aop,raan, date = coes
-    a,e,i,ta,aop,raan = coes
+    a,e,i,ta,aop,raan, date = coes
+    # a,e,i,ta,aop,raan = coes
     if deg:
         i*=np.pi/180
         ta*=np.pi/180
