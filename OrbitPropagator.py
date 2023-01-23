@@ -213,6 +213,7 @@ class OrbitPropagaotr:
 
         # Solar radiation pressure
         if self.perts['srp']:
+            # ORBIT MECHANICS ABOUT SMALL ASTEROIDS, D.J. Scheeres, 2007
 
             # vector form sun to spacecraft 
             r_sun2sc = self.cb['states'][self.step, :3]+r 
