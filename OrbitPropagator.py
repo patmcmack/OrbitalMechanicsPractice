@@ -18,7 +18,10 @@ def null_perts(): # Null Perturbations
         'thrust': 0,
         'thrust_direction': 0,
         'isp': 0,
-        'nBody': []
+        'nBody': [],
+        'srp': False,
+        'CR': 0, # coefficient of reflectivity
+        'A_srp': 0 # area for solar radiation pressure 
     }
 
 class OrbitPropagaotr:
@@ -52,7 +55,7 @@ class OrbitPropagaotr:
         self.spice_files_loaded = []
 
         # Check if loading in spice data
-        if self.perts['nBody']:
+        if self.perts['nBody'] or self.perts['srp']:
             # load kernel and log
             spice.furnsh('SpiceData/solar_system_kernel.mk')
             self.spice_files_loaded.append('SpiceData/solar_system_kernel.mk')
@@ -61,6 +64,16 @@ class OrbitPropagaotr:
             self.start_time = spice.utc2et(self.date0)
 
             self.spice_tspan = np.linspace(self.start_time, self.start_time+self.tspan, self.nsteps)
+
+            # get sun state if srp
+            if self.perts['srp']:
+
+                spice.furnsh(self.cb['spice_file'])
+
+                self.spice_files_loaded.append(self.cb['spice_file'])
+
+                # calc central body states throught propagation with respect to sun
+                self.cb['states']=st.get_ephemeris_data(self.cb['name'], self.spice_tspan, self.frame, 'SUN')
 
         # Load kernels for each body
         for body in self.perts['nBody']:
@@ -71,10 +84,6 @@ class OrbitPropagaotr:
 
             # Calculate body states with respect to central body
             body['states'] = st.get_ephemeris_data(body['name'],self.spice_tspan,self.frame, self.cb['name'])
-
-            
-
-
 
         # solver 
         self.solver = ode(self.diffy_q)
@@ -201,6 +210,14 @@ class OrbitPropagaotr:
             r_sat2body = r_cb2nb-r
 
             a +=  body['mu'] * (r_sat2body/np.linalg.norm(r_sat2body)**3 - r_cb2nb/(np.linalg.norm(r_cb2nb))**3)
+
+        # Solar radiation pressure
+        if self.perts['srp']:
+
+            # vector form sun to spacecraft 
+            r_sun2sc = self.cb['states'][self.step, :3]+r 
+
+            a += (1+self.perts['CR'])*pData.Sun['G1']*self.perts['A_srp']/mass/np.linalg.norm(r_sun2sc)**3*r_sun2sc
 
         return[vx,vy,vz,a[0],a[1],a[2], dmdt]
 

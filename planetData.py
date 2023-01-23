@@ -27,6 +27,7 @@ Sun = {
     'mass': 1.989e30,
     'mu':51.32712e11,
     'radius':695700.0,
+    'G1': 1e8, # kg-km^3/(s^2-m^2)
     'spice_file': '/home/mcmackinp/Documents/orbitalMechanics/SpiceData/de432s.bsp'
     # 'J2': -999999999
 }
