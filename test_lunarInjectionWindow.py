@@ -3,30 +3,56 @@ import matplotlib.pyplot as plt
 import spiceypy as spice
 import math as m
 from mpl_toolkits.mplot3d import Axes3D
-def getE(M,e):
-    # Use bisection method for stability when e = 1
+
+def getE_bisection(M,e):
+    # Use vectored bisection method for stability when e -> 1
     tol = 1e-8
-    error = 99
     i = 1
-    Ea = 0-0.1
-    Eb = np.pi*2+0.1
+    Ea = np.zeros(M.shape)
+    Eb = np.pi*2*np.ones(M.shape)
 
     while i<200:
         Ec = (Ea+Eb)/2
         f_c = (Ec - e*np.sin(Ec)) - M
         f_a = (Ea - e*np.sin(Ea)) - M
         f_b = (Eb - e*np.sin(Eb)) - M
-        if (abs(f_c) < tol):
+        if (np.linalg.norm(f_c) < tol):
             # print(f"Total iterations: {i}")
             return Ec
-        elif np.sign(f_a) == np.sign(f_c):
-            Ea = Ec 
-        elif np.sign(f_b) == np.sign(f_c):
-            Eb = Ec
+        A_sign_C = ( np.sign(f_a) == np.sign(f_c) )
+        B_sign_C = ( np.sign(f_b) == np.sign(f_c) )
+
+        Ea[A_sign_C] = Ec[A_sign_C]
+        Eb[B_sign_C] = Ec[B_sign_C]
+        # elif np.sign(f_a) == np.sign(f_c):
+        #     Ea = Ec 
+        # elif np.sign(f_b) == np.sign(f_c):
+        #     Eb = Ec
         i += 1
 
     print("Max iterations reached")
-    return -9999
+    return 9999
+
+def getE(M,e):
+    # Use vectored newton's method (issues when e=1)
+    tol = 1e-8
+    i = 1
+    # Initial guess
+    if e>0.8:
+        E = np.pi * np.ones(M.shape)
+    else:
+        E = M * np.ones(M.shape)
+
+    while i < 15:
+        F = (E - e*np.sin(E) - M)
+        # print(np.linalg.norm(F))
+        if  np.linalg.norm(F) < tol:
+            # print(f"Total iterations: {i}")
+            return E
+        E = E - (F)/(1-e*np.cos(E))
+        i += 1
+    print("Max iterations reached, trying bisection")
+    return getE_bisection(M,e)
         
 def eci2perif(raan, aop,i):
     # Inertial to perifocal rotation matrix
@@ -142,8 +168,8 @@ mu = 5.972e24*G
 
 # Time states
 date0 = '2022-01-20'
-dt = 100 # second
-tspan = 60*60*24*100 # seconds
+dt = 50 # second
+tspan = 60*60*24*25 # seconds
 
 # Get moon data from JPL SPICE data 
 print("Fetching Moon SPICE data")
@@ -155,6 +181,9 @@ avgMoonRadius = np.mean(np.linalg.norm(moonStates[:,:3], axis=1))
 coes_start = rv2coes(moonStates[0])
 coes_end = rv2coes(moonStates[-1])
 avgMoonInc = (coes_end[2]+coes_start[2])/2.0
+
+# Moon sphere of influence 
+rSOI = avgMoonRadius * (7.34767309e22/5.972e24)**(2/5) # Eqn 8.34 Howard
 
 iterations = len(t)
 # Parking orbit of spacecraft (assume near lunar plane)
@@ -173,11 +202,12 @@ M = n * np.linspace(0, T, m.floor(T/dt)) # Mean anomaly
 # M = n * ((t-start_time) - T*np.floor((t-start_time)/T))# Mean anomaly
 E = np.zeros(M.shape) # Eccentric anomaly
 print("Calculating S/C parking orbit in time")
-for j, m in enumerate(M):
-    print('\r', end='')
-    print(f"\t{(j/len(M)*100):.1f} %", end='')
-    E[j] = getE(m,e) # solve Kepler's Eqn
-print('')
+E = getE(M,e)
+# for j, m in enumerate(M):
+#     print('\r', end='')
+#     print(f"\t{(j/len(M)*100):.1f} %", end='')
+#     E[j] = getE(m,e) # solve Kepler's Eqn
+# print('')
 
 # Repeat E to get full t span
 E = np.tile(E, int(np.floor(len(t)/len(E))))
@@ -199,9 +229,9 @@ r_sat = np.dot(perif2eci, r_perif)
 v_sat = np.dot(perif2eci, v_perif)
 
 # ====== Iterate in time ======
-fig = plt.figure()
-ax = fig.add_subplot(111, projection ='3d')
-ax.plot(r_sat[0,:], r_sat[1,:], r_sat[2,:], label='S/C parking')
+# fig = plt.figure()
+# ax = fig.add_subplot(111, projection ='3d')
+# ax.plot(r_sat[0,:], r_sat[1,:], r_sat[2,:], label='S/C parking')
 # ax = Axes3D(fig)
 r_min = np.empty(t.shape)
 r_min[:] = np.nan
@@ -231,20 +261,20 @@ for j, time in enumerate(t):
     idx = np.searchsorted(t, time+tof, side ='left')
     r_moon = moonStates[idx, :3]
 
-    coes_moon = rv2coes(moonStates[idx])
-    i_moon = coes_moon[2]
-    raan_moon = coes_moon[5]
+    # coes_moon = rv2coes(moonStates[idx])
+    # i_moon = coes_moon[2]
+    # raan_moon = coes_moon[5]
 
     # ========= Spacecraft position after TLI =========
-    sat_state = np.concatenate((r_sat[:, j], v_sat[:, j])) 
-    coes_sat = rv2coes(sat_state)
-    nu_sat = coes_sat[3]
-    aop_sat = nu_sat#coes_sat[4]
-    raan_sat = coes_sat[5]
-    i_sat = coes_sat[2]
-    Ef = 180 *np.pi/180
-    aop_j = aop_sat#96 * np.pi/180#nu[j] # is this correct???
-    raan_j = raan_sat#90*np.pi/180
+    # sat_state = np.concatenate((r_sat[:, j], v_sat[:, j])) 
+    # coes_sat = rv2coes(sat_state)
+    # nu_sat = coes_sat[3]
+    # aop_sat = nu_sat#coes_sat[4]
+    # raan_sat = coes_sat[5]
+    # i_sat = coes_sat[2]
+    # Ef = 180 *np.pi/180
+    # aop_j = aop_sat#96 * np.pi/180#nu[j] # is this correct???
+    # raan_j = raan_sat#90*np.pi/180
     t_j = t[j:idx] - t[j]
     # r_sat_TLI = getPosTLI(t_j, e, a, Ef, raan_moon, aop_j, i_moon, mu)
     # v_perif_tli = np.sqrt(mu*a)/r_norm*np.array([-np.sin(E), np.cos(E)*np.sqrt(1-e**2),np.zeros(len(nu))])
@@ -252,17 +282,18 @@ for j, time in enumerate(t):
     n = np.sqrt(mu/a**3) # mean motion (\dot{M})
     M = n * t_j
     E = np.zeros(M.shape)
-    for jj, m in enumerate(M):
-        E[jj] = getE(m,e)
+    E = getE(M,e)
+    # for jj, m in enumerate(M):
+    #     E[jj] = getE(m,e)
 
     beta = e/(1+np.sqrt(1-e**2))
-    nu = E + 2*np.arctan2(beta*np.sin(E),1-beta*np.cos(E))
-    r_norm = a*(1-e**2)/(1+e*np.cos(nu))
+    nu_j = E + 2*np.arctan2(beta*np.sin(E),1-beta*np.cos(E))
+    r_norm_j = a*(1-e**2)/(1+e*np.cos(nu_j))
 
-    r_perif = r_norm*np.array([np.cos(nu), np.sin(nu), np.zeros(len(nu))])
-    v_perif = np.sqrt(mu*a)/r_norm*np.array([-np.sin(E), np.cos(E)*np.sqrt(1-e**2),np.zeros(len(nu))])
+    r_perif = r_norm_j*np.array([np.cos(nu_j), np.sin(nu_j), np.zeros(len(nu_j))])
+    v_perif = np.sqrt(mu*a)/r_norm_j*np.array([-np.sin(E), np.cos(E)*np.sqrt(1-e**2),np.zeros(len(nu_j))])
 
-    aop = nu_sat+aop_sat#96 * np.pi/180 # argument of periapsis
+    aop = nu[j]+aop#96 * np.pi/180 # argument of periapsis
     # i = 28.5 * np.pi/180
 
     # Rotation matrix from perifocal to ECI
@@ -271,8 +302,6 @@ for j, time in enumerate(t):
     # calc r and v in inertial frame
     r_sat_TLI = np.dot(perif2eci, r_perif)
     # ------------------------------------
-
-    
 
     # ========= Calc distance from moon post TLI =========
     r_moon2sc = np.linalg.norm(r_sat_TLI[:,-1] - r_moon)
@@ -283,7 +312,7 @@ for j, time in enumerate(t):
         print('\r', end='')
         print(f"\t{(j/len(t) * 100):.0f} %", end='')
 
-    # # ax.clear()
+    # ax.clear()
     # ax.plot(r_sat[0,j], r_sat[1,j], r_sat[2,j], marker='o')
     # ax.plot(r_sat_TLI[0,:], r_sat_TLI[1,:], r_sat_TLI[2,:], label='S/C')
     # ax.plot(moonStates[j:idx,0], moonStates[j:idx,1], moonStates[j:idx,2], label='Moon')
@@ -295,16 +324,18 @@ for j, time in enumerate(t):
     # ax.set_title(j)
 
     # plt.show()
-    print(j)
+    # print(j)
 print('')
 
 fig = plt.figure()
 ax = fig.add_subplot(111)
 
-ax.plot(t, r_min)
+xdata = (t[:100]-t[0])/3600
+ax.plot(xdata, r_min[:100])
+ax.plot([xdata[0], xdata[-1]], [rSOI, rSOI])
 plt.show()
 
-
+'''
 # ========= Position vs time (Kepler's Problem) ==========
 ra = rm
 rp = r0 
@@ -374,3 +405,7 @@ ax.set_aspect('equal')
 ax.legend()
 
 plt.show()
+
+
+
+'''
