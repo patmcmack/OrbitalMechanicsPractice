@@ -161,23 +161,28 @@ def getPosTLI(t, e, a, Ef, raan, aop, i, mu):
 
 # ========= Initial Conditions =======
 
+plotAnimation = True
+
 # Central body = Earth
 G_meters = 6.67408e-11
 G = G_meters*10**-9
 mu = 5.972e24*G
 
 # Time states
-date0 = '2022-01-20'
+date0 = '2022-01-29'
 dt = 50 # second
-tspan = 60*60*24*25 # seconds
+tspan = 60*60*24*1 # seconds
+tBuffer = 140 *60*60 # buffer for TOF
 
 # Get moon data from JPL SPICE data 
 print("Fetching Moon SPICE data")
 spice.furnsh('SpiceData/solar_system_kernel.mk')
 start_time = spice.utc2et(date0) # convert start date to seconds after J2000
-t = np.linspace(start_time, start_time+tspan, m.floor(tspan/dt))
-moonStates = getMoondata(t)
+t = np.linspace(start_time, start_time+tspan, m.floor((tspan)/dt))
+tPlus = np.linspace(start_time, start_time+tspan+tBuffer, m.floor((tspan+tBuffer)/dt))
+moonStates = getMoondata(tPlus)
 avgMoonRadius = np.mean(np.linalg.norm(moonStates[:,:3], axis=1))
+maxMoonRadius = np.max(np.linalg.norm(moonStates[:,:3], axis=1))
 coes_start = rv2coes(moonStates[0])
 coes_end = rv2coes(moonStates[-1])
 avgMoonInc = (coes_end[2]+coes_start[2])/2.0
@@ -229,9 +234,13 @@ r_sat = np.dot(perif2eci, r_perif)
 v_sat = np.dot(perif2eci, v_perif)
 
 # ====== Iterate in time ======
-# fig = plt.figure()
-# ax = fig.add_subplot(111, projection ='3d')
-# ax.plot(r_sat[0,:], r_sat[1,:], r_sat[2,:], label='S/C parking')
+if plotAnimation:
+    fig = plt.figure()
+    plt.ion()
+    plt.show()
+    ax = fig.add_subplot(111, projection ='3d')
+    ax.plot(r_sat[0,:], r_sat[1,:], r_sat[2,:], label='S/C parking')
+
 # ax = Axes3D(fig)
 r_min = np.empty(t.shape)
 r_min[:] = np.nan
@@ -254,12 +263,13 @@ for j, time in enumerate(t):
     tof = np.sqrt(a**3/mu) * (2*np.pi*k +(Ef-e*np.sin(Ef)) - (Eo-e*np.sin(Eo)) )
 
     # Loop end condition
-    if time+tof >= t[-1]:
+    if time+tof >= tPlus[-1]:
         break
 
     # ========= Moon postion after TLI =========
-    idx = np.searchsorted(t, time+tof, side ='left')
+    idx = np.searchsorted(tPlus, time+tof, side ='left')
     r_moon = moonStates[idx, :3]
+    # print(moonStates[j,0])
 
     # coes_moon = rv2coes(moonStates[idx])
     # i_moon = coes_moon[2]
@@ -275,7 +285,7 @@ for j, time in enumerate(t):
     # Ef = 180 *np.pi/180
     # aop_j = aop_sat#96 * np.pi/180#nu[j] # is this correct???
     # raan_j = raan_sat#90*np.pi/180
-    t_j = t[j:idx] - t[j]
+    t_j = tPlus[j:idx] - tPlus[j]
     # r_sat_TLI = getPosTLI(t_j, e, a, Ef, raan_moon, aop_j, i_moon, mu)
     # v_perif_tli = np.sqrt(mu*a)/r_norm*np.array([-np.sin(E), np.cos(E)*np.sqrt(1-e**2),np.zeros(len(nu))])
     # ------------------------------------
@@ -293,11 +303,11 @@ for j, time in enumerate(t):
     r_perif = r_norm_j*np.array([np.cos(nu_j), np.sin(nu_j), np.zeros(len(nu_j))])
     v_perif = np.sqrt(mu*a)/r_norm_j*np.array([-np.sin(E), np.cos(E)*np.sqrt(1-e**2),np.zeros(len(nu_j))])
 
-    aop = nu[j]+aop#96 * np.pi/180 # argument of periapsis
+    aop_j = nu[j]+aop#96 * np.pi/180 # argument of periapsis
     # i = 28.5 * np.pi/180
 
     # Rotation matrix from perifocal to ECI
-    perif2eci = np.transpose(eci2perif(raan, aop, i))
+    perif2eci = np.transpose(eci2perif(raan, aop_j, i))
 
     # calc r and v in inertial frame
     r_sat_TLI = np.dot(perif2eci, r_perif)
@@ -312,17 +322,31 @@ for j, time in enumerate(t):
         print('\r', end='')
         print(f"\t{(j/len(t) * 100):.0f} %", end='')
 
-    # ax.clear()
-    # ax.plot(r_sat[0,j], r_sat[1,j], r_sat[2,j], marker='o')
-    # ax.plot(r_sat_TLI[0,:], r_sat_TLI[1,:], r_sat_TLI[2,:], label='S/C')
-    # ax.plot(moonStates[j:idx,0], moonStates[j:idx,1], moonStates[j:idx,2], label='Moon')
-    # plotMoon(ax, moonStates[j,:])
-    # plotMoon(ax, moonStates[idx,:])
-    # plotEarth(ax)
-    # ax.set_aspect('equal')
-    # ax.legend()
-    # ax.set_title(j)
+    if plotAnimation:
+        ax.clear()
+        satLine = ax.plot(r_sat[0,j], r_sat[1,j], r_sat[2,j], marker='o')
+        TLI_Line = ax.plot(r_sat_TLI[0,:], r_sat_TLI[1,:], r_sat_TLI[2,:], label='S/C')
+        moonLine = ax.plot(moonStates[j:idx,0], moonStates[j:idx,1], moonStates[j:idx,2], label='Moon')
+        plotMoon(ax, moonStates[j,:])
+        plotMoon(ax, moonStates[idx,:])
+        plotEarth(ax)
+        ax.set_aspect('equal')
+        ax.legend()
+        titleStr = spice.et2utc(time, 'C', 3, 50)
+        titleStr += f"$\quad$|$\quad$R_min: {r_min[j]:.0f} km"
+        ax.set_title(titleStr)
+        # ax.set_title(f"Iteration: {j} R_min: {r_min[j]:.0f}")
+        # ax.set_xlim([-(6378+3000), 6378+3000])
+        # ax.set_ylim([-(6378+3000), 6378+3000])
+        # ax.set_zlim([-(6378+3000), 6378+3000])
+        scale = 0.75
+        ax.set_xlim([-maxMoonRadius*scale, maxMoonRadius*scale])
+        ax.set_ylim([-maxMoonRadius*scale, maxMoonRadius*scale])
+        ax.set_zlim([-maxMoonRadius*scale, maxMoonRadius*scale])
 
+        plt.pause(0.00001)
+        plt.draw()
+    # input("Press enter")
     # plt.show()
     # print(j)
 print('')
@@ -330,9 +354,12 @@ print('')
 fig = plt.figure()
 ax = fig.add_subplot(111)
 
-xdata = (t[:100]-t[0])/3600
-ax.plot(xdata, r_min[:100])
+xdata = (t-t[0])/(3600*24)
+ax.plot(xdata, r_min[:])
 ax.plot([xdata[0], xdata[-1]], [rSOI, rSOI])
+ax.set_title(f"Distance from Moon after TLI ($t_0 = $ {date0})")
+ax.set_ylabel("Km")
+ax.set_xlabel("$t_0$ + days")
 plt.show()
 
 '''
