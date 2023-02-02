@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 import spiceypy as spice
 import math as m
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.animation import FFMpegWriter
+import matplotlib
+matplotlib.use("Agg")
 
 def getE_bisection(M,e):
     # Use vectored bisection method for stability when e -> 1
@@ -162,6 +165,7 @@ def getPosTLI(t, e, a, Ef, raan, aop, i, mu):
 # ========= Initial Conditions =======
 
 plotAnimation = True
+saveAnimation = True
 
 # Central body = Earth
 G_meters = 6.67408e-11
@@ -170,8 +174,8 @@ mu = 5.972e24*G
 
 # Time states
 date0 = '2022-01-29'
-dt = 50 # second
-tspan = 60*60*24*1 # seconds
+dt = 200 # second
+tspan = 60*60*24*.1 # seconds
 tBuffer = 140 *60*60 # buffer for TOF
 
 # Get moon data from JPL SPICE data 
@@ -235,132 +239,163 @@ v_sat = np.dot(perif2eci, v_perif)
 
 # ====== Iterate in time ======
 if plotAnimation:
-    fig = plt.figure()
+    fig = plt.figure(figsize=(14,9))
     plt.ion()
-    plt.show()
-    ax = fig.add_subplot(111, projection ='3d')
-    ax.plot(r_sat[0,:], r_sat[1,:], r_sat[2,:], label='S/C parking')
-
-# ax = Axes3D(fig)
-r_min = np.empty(t.shape)
-r_min[:] = np.nan
-print("Calculating TLI injections")
-for j, time in enumerate(t):
-    # j=650
-    # Iterate through each point in time 
-
-    # Estimate time of flight (Assume Hohmann transfer)
-    rp = r_norm[j] # initial altitude (rp)
-    ra = np.linalg.norm(moonStates[j, :3])
-    e = (ra-rp)/(ra+rp)
-    a = (ra+rp)/2
-    # v0 = np.sqrt(2*mu*(1/r0 - 2/avgMoonRadius)) # not used
-
-    k = 0 # number of times around periapsis
-    Ef = 180 * np.pi/180 # final anomoly
-    Eo = 0 # starting anomoly
-
-    tof = np.sqrt(a**3/mu) * (2*np.pi*k +(Ef-e*np.sin(Ef)) - (Eo-e*np.sin(Eo)) )
-
-    # Loop end condition
-    if time+tof >= tPlus[-1]:
-        break
-
-    # ========= Moon postion after TLI =========
-    idx = np.searchsorted(tPlus, time+tof, side ='left')
-    r_moon = moonStates[idx, :3]
-    # print(moonStates[j,0])
-
-    # coes_moon = rv2coes(moonStates[idx])
-    # i_moon = coes_moon[2]
-    # raan_moon = coes_moon[5]
-
-    # ========= Spacecraft position after TLI =========
-    # sat_state = np.concatenate((r_sat[:, j], v_sat[:, j])) 
-    # coes_sat = rv2coes(sat_state)
-    # nu_sat = coes_sat[3]
-    # aop_sat = nu_sat#coes_sat[4]
-    # raan_sat = coes_sat[5]
-    # i_sat = coes_sat[2]
-    # Ef = 180 *np.pi/180
-    # aop_j = aop_sat#96 * np.pi/180#nu[j] # is this correct???
-    # raan_j = raan_sat#90*np.pi/180
-    t_j = tPlus[j:idx] - tPlus[j]
-    # r_sat_TLI = getPosTLI(t_j, e, a, Ef, raan_moon, aop_j, i_moon, mu)
-    # v_perif_tli = np.sqrt(mu*a)/r_norm*np.array([-np.sin(E), np.cos(E)*np.sqrt(1-e**2),np.zeros(len(nu))])
-    # ------------------------------------
-    n = np.sqrt(mu/a**3) # mean motion (\dot{M})
-    M = n * t_j
-    E = np.zeros(M.shape)
-    E = getE(M,e)
-    # for jj, m in enumerate(M):
-    #     E[jj] = getE(m,e)
-
-    beta = e/(1+np.sqrt(1-e**2))
-    nu_j = E + 2*np.arctan2(beta*np.sin(E),1-beta*np.cos(E))
-    r_norm_j = a*(1-e**2)/(1+e*np.cos(nu_j))
-
-    r_perif = r_norm_j*np.array([np.cos(nu_j), np.sin(nu_j), np.zeros(len(nu_j))])
-    v_perif = np.sqrt(mu*a)/r_norm_j*np.array([-np.sin(E), np.cos(E)*np.sqrt(1-e**2),np.zeros(len(nu_j))])
-
-    aop_j = nu[j]+aop#96 * np.pi/180 # argument of periapsis
-    # i = 28.5 * np.pi/180
-
-    # Rotation matrix from perifocal to ECI
-    perif2eci = np.transpose(eci2perif(raan, aop_j, i))
-
-    # calc r and v in inertial frame
-    r_sat_TLI = np.dot(perif2eci, r_perif)
-    # ------------------------------------
-
-    # ========= Calc distance from moon post TLI =========
-    r_moon2sc = np.linalg.norm(r_sat_TLI[:,-1] - r_moon)
-    r_min[j] = r_moon2sc
-
-    # ========= Output progress =========
-    if j%(len(t)/100)<=1:
-        print('\r', end='')
-        print(f"\t{(j/len(t) * 100):.0f} %", end='')
-
-    if plotAnimation:
-        ax.clear()
-        satLine = ax.plot(r_sat[0,j], r_sat[1,j], r_sat[2,j], marker='o')
-        TLI_Line = ax.plot(r_sat_TLI[0,:], r_sat_TLI[1,:], r_sat_TLI[2,:], label='S/C')
-        moonLine = ax.plot(moonStates[j:idx,0], moonStates[j:idx,1], moonStates[j:idx,2], label='Moon')
-        plotMoon(ax, moonStates[j,:])
-        plotMoon(ax, moonStates[idx,:])
-        plotEarth(ax)
-        ax.set_aspect('equal')
-        ax.legend()
-        titleStr = spice.et2utc(time, 'C', 3, 50)
-        titleStr += f"$\quad$|$\quad$R_min: {r_min[j]:.0f} km"
-        ax.set_title(titleStr)
-        # ax.set_title(f"Iteration: {j} R_min: {r_min[j]:.0f}")
-        # ax.set_xlim([-(6378+3000), 6378+3000])
-        # ax.set_ylim([-(6378+3000), 6378+3000])
-        # ax.set_zlim([-(6378+3000), 6378+3000])
-        scale = 0.75
-        ax.set_xlim([-maxMoonRadius*scale, maxMoonRadius*scale])
-        ax.set_ylim([-maxMoonRadius*scale, maxMoonRadius*scale])
-        ax.set_zlim([-maxMoonRadius*scale, maxMoonRadius*scale])
-
-        plt.pause(0.00001)
-        plt.draw()
-    # input("Press enter")
     # plt.show()
-    # print(j)
+    ax = fig.add_subplot(121, projection ='3d')
+    ax2 = fig.add_subplot(122, projection ='3d')
+    plt.subplots_adjust(bottom=0.1, left=0.1, right=.9, top=.9)
+    if saveAnimation:
+        writer = FFMpegWriter(fps=30)
+        # writer.setup(fig, 'Test.mp4', dpi=100)
+    # ax.plot(r_sat[0,:], r_sat[1,:], r_sat[2,:], label='S/C parking')
+
+    # plt.tight_layout()
+with writer.saving(fig, 'test.mp4', dpi=100):
+    # ax = Axes3D(fig)
+    r_min = np.empty(t.shape)
+    r_min[:] = np.nan
+    print("Calculating TLI injections")
+    for j, time in enumerate(t):
+        # j=650
+        # Iterate through each point in time 
+
+        # Estimate time of flight (Assume Hohmann transfer)
+        rp = r_norm[j] # initial altitude (rp)
+        ra = np.linalg.norm(moonStates[j, :3])
+        e = (ra-rp)/(ra+rp)
+        a = (ra+rp)/2
+        # v0 = np.sqrt(2*mu*(1/r0 - 2/avgMoonRadius)) # not used
+
+        k = 0 # number of times around periapsis
+        Ef = 180 * np.pi/180 # final anomoly
+        Eo = 0 # starting anomoly
+
+        tof = np.sqrt(a**3/mu) * (2*np.pi*k +(Ef-e*np.sin(Ef)) - (Eo-e*np.sin(Eo)) )
+
+        # Loop end condition
+        if time+tof >= tPlus[-1]:
+            break
+
+        # ========= Moon postion after TLI =========
+        idx = np.searchsorted(tPlus, time+tof, side ='left')
+        r_moon = moonStates[idx, :3]
+        # print(moonStates[j,0])
+
+        # coes_moon = rv2coes(moonStates[idx])
+        # i_moon = coes_moon[2]
+        # raan_moon = coes_moon[5]
+
+        # ========= Spacecraft position after TLI =========
+        # sat_state = np.concatenate((r_sat[:, j], v_sat[:, j])) 
+        # coes_sat = rv2coes(sat_state)
+        # nu_sat = coes_sat[3]
+        # aop_sat = nu_sat#coes_sat[4]
+        # raan_sat = coes_sat[5]
+        # i_sat = coes_sat[2]
+        # Ef = 180 *np.pi/180
+        # aop_j = aop_sat#96 * np.pi/180#nu[j] # is this correct???
+        # raan_j = raan_sat#90*np.pi/180
+        t_j = tPlus[j:idx] - tPlus[j]
+        # r_sat_TLI = getPosTLI(t_j, e, a, Ef, raan_moon, aop_j, i_moon, mu)
+        # v_perif_tli = np.sqrt(mu*a)/r_norm*np.array([-np.sin(E), np.cos(E)*np.sqrt(1-e**2),np.zeros(len(nu))])
+        # ------------------------------------
+        n = np.sqrt(mu/a**3) # mean motion (\dot{M})
+        M = n * t_j
+        E = np.zeros(M.shape)
+        E = getE(M,e)
+        # for jj, m in enumerate(M):
+        #     E[jj] = getE(m,e)
+
+        beta = e/(1+np.sqrt(1-e**2))
+        nu_j = E + 2*np.arctan2(beta*np.sin(E),1-beta*np.cos(E))
+        r_norm_j = a*(1-e**2)/(1+e*np.cos(nu_j))
+
+        r_perif = r_norm_j*np.array([np.cos(nu_j), np.sin(nu_j), np.zeros(len(nu_j))])
+        v_perif = np.sqrt(mu*a)/r_norm_j*np.array([-np.sin(E), np.cos(E)*np.sqrt(1-e**2),np.zeros(len(nu_j))])
+
+        aop_j = nu[j]+aop#96 * np.pi/180 # argument of periapsis
+        # i = 28.5 * np.pi/180
+
+        # Rotation matrix from perifocal to ECI
+        perif2eci = np.transpose(eci2perif(raan, aop_j, i))
+
+        # calc r and v in inertial frame
+        r_sat_TLI = np.dot(perif2eci, r_perif)
+        # ------------------------------------
+
+        # ========= Calc distance from moon post TLI =========
+        r_moon2sc = np.linalg.norm(r_sat_TLI[:,-1] - r_moon)
+        r_min[j] = r_moon2sc
+
+        # ========= Output progress =========
+        if j%(len(t)/100)<=1:
+            print('\r', end='')
+            print(f"\t{(j/len(t) * 100):.0f} %", end='')
+
+        if plotAnimation:
+            if r_min[j] < rSOI:
+                colorLine = 'g'
+            else:
+                colorLine = 'k'
+            # ax.clear()
+            # ax2.clear()
+
+            # First axis
+            satLine = ax.plot(r_sat[0,j], r_sat[1,j], r_sat[2,j], marker='o', color='r')
+            TLI_Line = ax.plot(r_sat_TLI[0,:], r_sat_TLI[1,:], r_sat_TLI[2,:], color=colorLine, label="TLI orbit")
+            moonLine = ax.plot(moonStates[j:idx,0], moonStates[j:idx,1], moonStates[j:idx,2], label='Moon during TLI', color = 'tab:brown')
+            plotMoon(ax, moonStates[j,:])
+            plotMoon(ax, moonStates[idx,:])
+            plotEarth(ax)
+            ax.set_aspect('equal')
+            ax.legend()
+            ax.set_title(spice.et2utc(time, 'C', 3, 50))
+            scale = 0.75
+            ax.set_xlim([-maxMoonRadius*scale, maxMoonRadius*scale])
+            ax.set_ylim([-maxMoonRadius*scale, maxMoonRadius*scale])
+            ax.set_zlim([-maxMoonRadius*scale, maxMoonRadius*scale])
+
+            # Second axis
+            azm = j
+            ax2.set_title(f"Distance from Moon post TLI: {r_min[j]:.0f} km")
+            # ax2.set_title(f"Az = {ax2.azim}, El = {ax2.elev}")
+            plotMoon(ax2, moonStates[j,:])
+            plotMoon(ax2, moonStates[idx,:])
+            plotEarth(ax2)
+            tail = 500 # number of steps the sat tail will be
+            satLine = ax2.plot(r_sat[0,max([0,j-tail]):j], r_sat[1,max([0,j-tail]):j], r_sat[2,max([0,j-tail]):j], color='b', linestyle=':', linewidth=0.75)
+            sat_j = ax2.plot(r_sat[0,j], r_sat[1,j], r_sat[2,j], marker='o', color='r',  label='Spacecraft')
+            TLI_Line = ax2.plot(r_sat_TLI[0,:], r_sat_TLI[1,:], r_sat_TLI[2,:], color=colorLine)
+            moonLine = ax2.plot(moonStates[j:idx,0], moonStates[j:idx,1], moonStates[j:idx,2], color = 'tab:brown')
+            ax2.set_aspect('equal')
+            ax2.legend()
+            ax2.set_xlim([-(6378+8000), 6378+8000])
+            ax2.set_ylim([-(6378+8000), 6378+8000])
+            ax2.set_zlim([-(6378+8000), 6378+8000])
+            ax2.view_init(elev=15, azim=160)
+
+            # plt.pause(0.00001)
+            # plt.draw()
+            if saveAnimation:
+                writer.grab_frame()
+        # input("Press enter")
+        # plt.show()
+        # print(j)
 print('')
+# if saveAnimation:
+#     writer.finish()
 
-fig = plt.figure()
-ax = fig.add_subplot(111)
+# fig = plt.figure()
+# ax = fig.add_subplot(111)
 
-xdata = (t-t[0])/(3600*24)
-ax.plot(xdata, r_min[:])
-ax.plot([xdata[0], xdata[-1]], [rSOI, rSOI])
-ax.set_title(f"Distance from Moon after TLI ($t_0 = $ {date0})")
-ax.set_ylabel("Km")
-ax.set_xlabel("$t_0$ + days")
-plt.show()
+# xdata = (t-t[0])/(3600*24)
+# ax.plot(xdata, r_min[:])
+# ax.plot([xdata[0], xdata[-1]], [rSOI, rSOI])
+# ax.set_title(f"Distance from Moon after TLI ($t_0 = $ {date0})")
+# ax.set_ylabel("Km")
+# ax.set_xlabel("$t_0$ + days")
+# plt.show()
 
 '''
 # ========= Position vs time (Kepler's Problem) ==========
